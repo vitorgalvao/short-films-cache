@@ -1,0 +1,71 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'json'
+require 'nokogiri'
+require 'rss'
+require 'open3'
+require 'pathname'
+
+# Require an argument
+abort 'One argument is required, pointing to the directory where to save data' unless ARGV.count == 1
+
+# Set up file system and data paths
+Cache_dir = Pathname.new(ARGV[0])
+Image_dir = Cache_dir.join('images')
+Cache_file = Cache_dir.join('cache.json')
+
+Cache_dir.mkpath
+Image_dir.mkpath
+
+# Helper to get URL contents
+def download(url)
+  Open3.capture2('curl', '--silent', url).first
+end
+
+# Grab RSS items
+Site_rss = download('https://www.shortoftheweek.com/rss')
+Site_feed_links = RSS::Parser.parse(Site_rss).items.map(&:link).reject { |link| link.match('/news/') }
+
+Script_filter_items = Site_feed_links.each_with_object([]) do |item, array|
+  # Get details
+  page = Nokogiri::HTML(download(item), nil, Encoding::UTF_8.to_s) # Forced UTF-8
+  next unless page.at('body.page-video-single') # Only consider single video pages
+
+  url = page.at('.embed-wrapper').attr('data-src')
+  title = page.at('h1.title').text
+  image = 'https:' + page.at('.bar-hidden').at('img').attr('src')
+  synopsis = page.at('.description').text.strip
+  details = page.at('.details')
+  genre = details.at('span').text
+  author = details.css('span')[1].text.strip.gsub(/\s+/, ' ') # `gsub` for carriage returns and extraneous spaces in the middle of strings
+  duration = details.at('time') ? details.at('time').text : 'Unknown duration'
+
+  # Download and crop banner images
+  image_name = Pathname.new(image).basename
+  downloaded_image = Image_dir.join(image_name)
+
+  # Fork processes to speedup task
+  Process.fork {
+    downloaded_image.write(download(image))
+    system('convert', downloaded_image.to_path, '-thumbnail', '500x500^', '-gravity', 'center', '-extent', '500x500', '-density', '72', downloaded_image.to_path)
+    # On macOS, cropping can be accomplished with sips:
+    # image_width = Open3.capture2('sips', '--getProperty', 'pixelWidth', downloaded_image.to_path).first.split("\s").last.to_i
+    # image_height = Open3.capture2('sips', '--getProperty', 'pixelHeight', downloaded_image.to_path).first.split("\s").last.to_i
+    # smaller_dimension = (image_width > image_height ? image_height : image_width).to_s
+    # system('sips', '--cropToHeightWidth', smaller_dimension, smaller_dimension, downloaded_image.to_path, out: File::NULL)
+  }
+
+  array.push(
+    title: title,
+    subtitle: "#{genre} 𐄁 #{duration} 𐄁 #{author}",
+    icon: { path: "~/Library/Caches/com.runningwithcrayons.Alfred/Workflow Data/com.vitorgalvao.alfred.shortfilms/images/#{image_name.to_path}" },
+    mods: { alt: { subtitle: synopsis } },
+    quicklookurl: item,
+    match: "#{title} #{genre}",
+    arg: url
+  )
+end
+
+Cache_file.write({ cache: { seconds: 21600, loosereload: true }, items: Script_filter_items }.to_json)
+Process.waitall
