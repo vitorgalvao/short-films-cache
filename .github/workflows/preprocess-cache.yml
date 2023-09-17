@@ -1,0 +1,39 @@
+name: Preprocess Cache
+permissions: {} # Lock down permissions by default
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '15 15 * * *'
+
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GEM_HOME: ${{ github.workspace }}/gems
+      DATA_DIR: ${{ github.workspace }}/data-cache
+      PACKAGE: ${{ github.workspace }}/data.tgz
+    steps:
+      - name: Prepare repository
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+           git config --global user.name "github-actions"
+           git config --global user.email "github-actions@users.noreply.github.com"
+           git clone "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPOSITORY}" .
+      - name: Install dependencies
+        run: |
+          gem install --no-document 'nokogiri'
+          sudo apt-get update && sudo apt-get install imagemagick
+      - name: Fetch and compress data
+        run: |
+          ./fetch-data "${DATA_DIR}"
+          tar --directory "${DATA_DIR}" --create --gzip --file "${PACKAGE}" .
+      - name: Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$(date +%F)" --title "$(date +%F)" "${PACKAGE}"

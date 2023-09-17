@@ -1,0 +1,20 @@
+name: Cleanup Releases
+permissions: {} # Lock down permissions by default
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '16 16 7 * *'
+
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Delete old releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          gh --repo "${REPOSITORY}" release list --order asc --limit 60 --json tagName --jq '.[0:-5].[].tagName' | xargs -I {} gh --repo "${REPOSITORY}" release delete --yes --cleanup-tag {}
