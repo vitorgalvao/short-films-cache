@@ -1,0 +1,20 @@
+name: Cleanup Releases
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '16 16 7 * *'
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v4
+    - name: Delete old releases
+      run: |
+        gh release list --order asc --limit 60 --json tagName --jq '.[0:-5].[].tagName' | xargs -I {} gh release delete --yes --cleanup-tag {}

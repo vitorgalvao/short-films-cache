@@ -1,0 +1,30 @@
+name: Preprocess Cache
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '15 15 * * *'
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GEM_HOME: ~/gems
+      DATA_DIR: ~/data-cache
+      PACKAGE: ~/shorts.tgz
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v4
+    - name: Install dependencies
+      run: |
+        gem install --no-document 'nokogiri'
+    - name: Fetch data
+      run: |
+        ./fetch-data "${DATA_DIR}"
+    - name: Compress and release
+      run: |
+        tar --directory "${DATA_DIR}" --create --gzip --file "${PACKAGE}" .
+        gh release create "$(date +%F)" --title "$(date +%F)" "${PACKAGE}"
