@@ -1,0 +1,22 @@
+name: Cleanup Releases
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v4
+    - name: Delete old releases
+      run: |
+        while IFS= read -r tag
+        do
+          gh release delete --yes --cleanup-tag "${tag}"
+        done < <(gh release list --order asc --json tagName --jq '.[0:-25].[].tagName')
